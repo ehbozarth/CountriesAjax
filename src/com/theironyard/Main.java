@@ -1,5 +1,8 @@
 package com.theironyard;
 
+import jodd.json.JsonSerializer;
+import spark.Spark;
+
 import java.sql.*;
 import java.util.ArrayList;
 
@@ -8,14 +11,14 @@ public class Main {
     public static void createTables(Connection conn) throws SQLException {
         Statement stmt = conn.createStatement();
         stmt.execute("CREATE TABLE IF NOT EXISTS countries (id IDENTITY, name VARCHAR, abbrev VARCHAR)");
-    }
+    }//End of createTables
 
     public static void insertCountry(Connection conn, String name, String abbrev) throws SQLException {
         PreparedStatement stmt = conn.prepareStatement("INSERT INTO countries VALUES (NULL, ?, ?)");
         stmt.setString(1, name);
         stmt.setString(2, abbrev);
         stmt.execute();
-    }
+    }//End of insertCountry
 
     public static Country selectCountry(Connection conn, int id) throws SQLException {
         Country country = null;
@@ -29,7 +32,7 @@ public class Main {
             country.abbrev = results.getString("abbrev");
         }
         return country;
-    }
+    }//End of selectCountry(Single Country)
 
     public static ArrayList<Country> selectCountries(Connection conn) throws SQLException {
         ArrayList<Country> countries = new ArrayList();
@@ -43,11 +46,69 @@ public class Main {
             countries.add(country);
         }
         return countries;
-    }
+    }//End of selectCountries(Multiple Countries)
+
+    //////////////////////////////////////////////////////////////////////////////////////////
 
     public static void main(String[] args) throws SQLException {
         // open database
         Connection conn = DriverManager.getConnection("jdbc:h2:./main");
         createTables(conn);
-    }
-}
+
+        //Serve External Files
+        Spark.externalStaticFileLocation("public");
+        Spark.init();
+
+        //Insert Test Data
+        if(selectCountries(conn).size() == 0){
+            insertCountry(conn, "United States", "US");
+            insertCountry(conn, "Canada", "CA");
+            insertCountry(conn, "Mexico", "MX");
+        }
+
+        //Create routes for AJAX
+        Spark.get(
+                "/get-countries",
+                ((request, response) -> {
+                    JsonSerializer serializer = new JsonSerializer();
+                    String json = serializer.serialize(selectCountries(conn));
+                    return json;
+                })
+        );//End of Spark.get() route for /get-countries (Get All countries)
+
+        Spark.get(
+                "/get-country",
+                ((request, response) -> {
+                    String id = request.queryParams("id");
+                    try{
+                        int idNum = Integer.valueOf(id);
+                        JsonSerializer serializer = new JsonSerializer();
+                        String json = serializer.serialize(selectCountry(conn, idNum));
+                        return json;
+                    }
+                    catch (Exception e){
+
+                    }
+                    return "";
+                })
+        );//End of Spark.get() route for /get-country (Get One Country)
+
+        Spark.post(
+                "/add-country",
+                ((request, response) -> {
+                    String name = request.queryParams("name");
+                    String abbrev = request.queryParams("abbrev");
+                    if(name == null || abbrev == null){
+                        Spark.halt(403);
+                    }
+                    insertCountry(conn, name, abbrev);
+                    return "";
+                })
+        );//End of Spark.post() route for /add-country (Insert Single Country)
+
+
+
+    }//End of Main Method
+
+
+}//End of Main Class
